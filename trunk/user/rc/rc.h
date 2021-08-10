@@ -38,6 +38,7 @@
 
 #define DNS_RESOLV_CONF			"/etc/resolv.conf"
 #define DNS_SERVERS_FILE		"/tmp/dnsmasq.servers"
+#define DNS_RELAY_QUERIES_MAX		512
 
 #define SCRIPT_UDHCPC_LAN		"/tmp/udhcpc_lan.script"
 #define SCRIPT_UDHCPC_WAN		"/tmp/udhcpc.script"
@@ -517,6 +518,12 @@ int is_scutclient_run(void);
 void stop_scutclient(void);
 void start_scutclient(void);
 void restart_scutclient(void);
+#endif
+#if defined(APP_MENTOHUST)
+int is_mentohust_run(void);
+void stop_mentohust(void);
+void start_mentohust(void);
+void restart_mentohust(void);
 #endif
 #if defined(APP_TTYD)
 void stop_ttyd(void);

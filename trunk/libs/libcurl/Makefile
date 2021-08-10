@@ -1,5 +1,7 @@
-SRC_NAME=curl-7.65.1
-SRC_URL=https://github.com/curl/curl/releases/download/curl-7_65_1/curl-7.65.1.tar.xz
+SRC_NAME=curl-7.75.0
+SRC_URL=https://github.com/curl/curl/releases/download/curl-7_75_0/curl-7.75.0.tar.xz
+
+LDFLAGS += -Wl,-rpath-link=$(STAGEDIR)/lib
 
 all: download_test extract_test config_test
 	$(MAKE) -j$(HOST_NCPU) -C $(SRC_NAME)
@@ -54,17 +56,16 @@ configure:
 		--without-libssh2 \
 		--without-krb4 \
 		--without-nss \
-		--without-ssl \
 		--with-random=/dev/urandom \
 		--with-zlib=$(STAGEDIR) \
-		--with-mbedtls=$(STAGEDIR) \
+		--with-ssl=$(STAGEDIR) \
 		--host=$(HOST_TARGET) \
 		--build=$(HOST_BUILD) ; \
 	)
 
 clean:
 	if [ -f $(SRC_NAME)/Makefile ] ; then \
-		$(MAKE) -C $(SRC_NAME) distclean ; \
+		$(MAKE) -C $(SRC_NAME) clean ; \
 	fi ; \
 	rm -f config_done
 

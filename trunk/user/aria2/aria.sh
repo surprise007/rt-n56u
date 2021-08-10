@@ -36,7 +36,6 @@ func_start()
 
 	FILE_CONF="$DIR_CFG/aria2.conf"
 	FILE_LIST="$DIR_CFG/incomplete.lst"
-	FILE_WEB_CONF="$DIR_CFG/configuration.js"
 
 	touch "$FILE_LIST"
 
@@ -44,7 +43,6 @@ func_start()
 	aria_rport=`nvram get aria_rport`
 	aria_user=`nvram get http_username`
 	aria_pass=`nvram get http_passwd`
-	lan_ipaddr=`nvram get lan_ipaddr_t`
 
 	[ -z "$aria_rport" ] && aria_rport="6800"
 	[ -z "$aria_pport" ] && aria_pport="16888"
@@ -107,55 +105,16 @@ log-level=notice
 
 EOF
 	fi
-:<<!
-	if [ ! -f "$FILE_WEB_CONF" ] ; then
-		cat > "$FILE_WEB_CONF" <<EOF
-angular
-.module('webui.services.configuration',  [])
-.constant('\$name', 'Aria2 WebUI')
-.constant('\$titlePattern', 'DL: {download_speed} - UL: {upload_speed}')
-.constant('\$pageSize', 11)
-.constant('\$authconf', {
-  host: '$lan_ipaddr',
-  path: '/jsonrpc',
-  port: '$aria_rport',
-  encrypt: false,
-  auth: {
-  //token: 'admin',
-  user: '$aria_user',
-  pass: '$aria_pass',
-  },
-  directURL: ''
-})
-.constant('\$enable', {
-  torrent: true,
-  metalink: true,
-  sidebar: {
-    show: true,
-    stats: true,
-    filters: true,
-    starredProps: true,
-  }
-})
-.constant('\$starredProps', [
-  'dir', 'auto-file-renaming', 'max-connection-per-server'
-])
-.constant('\$downloadProps', [
-  'pause', 'dir', 'max-connection-per-server'
-])
-.constant('\$globalTimeout', 1000)
-;
 
-EOF
-	else
-		old_host=`grep 'host:' $FILE_WEB_CONF | awk -F \' '{print $2}'`
-		old_port=`grep 'port:' $FILE_WEB_CONF | awk -F \' '{print $2}'`
-		[ "$old_host" != "$lan_ipaddr" ] && sed -i "s/\(host:\).*/\1\ \'$lan_ipaddr\'\,/" $FILE_WEB_CONF
-		[ "$old_port" != "$aria_rport" ] && sed -i "s/\(port:\).*/\1\ \'$aria_rport\'\,/" $FILE_WEB_CONF
-	fi
-!
 	# aria2 needed home dir
 	export HOME="$DIR_CFG"
+
+	if [ "`nvram get http_proto`" != "0" ]; then
+		SVC_ROOT=1
+		SSL_OPT="--rpc-secure=true --rpc-certificate=/etc/storage/https/server.crt --rpc-private-key=/etc/storage/https/server.key"
+	else
+		SSL_OPT=
+	fi
 
 	svc_user=""
 
@@ -163,13 +122,6 @@ EOF
 		chmod 777 "${DIR_LINK}"
 		chown -R nobody "$DIR_CFG"
 		svc_user=" -c nobody"
-	fi
-
-	if [ "`nvram get http_proto`" != "0" ]; then
-		chmod 644 /etc/storage/https/server.crt /etc/storage/https/server.key
-		SSL_OPT="--rpc-secure=true --rpc-certificate=/etc/storage/https/server.crt --rpc-private-key=/etc/storage/https/server.key"
-	else
-		SSL_OPT=
 	fi
 
 	start-stop-daemon -S -N $SVC_PRIORITY$svc_user -x $SVC_PATH -- \

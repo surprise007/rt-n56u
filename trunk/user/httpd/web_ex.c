@@ -95,7 +95,12 @@ nvram_commit_safe(void)
 void
 sys_reboot(void)
 {
+#ifdef MTD_FLASH_32M_REBOOT_BUG
+	doSystem("/sbin/mtd_storage.sh %s", "save");
+	system("/bin/mtd_write -r unlock mtd1");
+#else
 	kill(1, SIGTERM);
+#endif
 }
 
 char *
@@ -658,7 +663,7 @@ dump_file(webs_t wp, char *filename)
 	}
 
 	extensions = strrchr(filename, '.');
-	if (extensions && strcmp(extensions, ".key") == 0) {
+	if (!get_login_safe() && extensions && strcmp(extensions, ".key") == 0) {
 		return websWrite(wp, "%s", "# !!!This is hidden write-only secret key file!!!\n");
 	}
 
@@ -1953,6 +1958,31 @@ static int scutclient_version_hook(int eid, webs_t wp, int argc, char **argv)
 }
 #endif
 
+#if defined (APP_MENTOHUST)
+static int mentohust_action_hook(int eid, webs_t wp, int argc, char **argv)
+{
+	int needed_seconds = 2;
+	char *action = websGetVar(wp, "connect_action", "");
+
+	if (!strcmp(action, "Reconnect")) {
+		notify_rc(RCN_RESTART_MENTOHUST);
+	}
+	else if (!strcmp(action, "Disconnect")) {
+		notify_rc("stop_mentohust");
+	}
+
+	websWrite(wp, "<script>restart_needed_time(%d);</script>\n", needed_seconds);
+	return 0;
+}
+
+static int mentohust_status_hook(int eid, webs_t wp, int argc, char **argv)
+{
+	int status_code = pids("bin_mentohust");
+	websWrite(wp, "function mentohust_status() { return %d;}\n", status_code);
+	return 0;
+}
+#endif
+
 #if defined (APP_SHADOWSOCKS)
 static int shadowsocks_action_hook(int eid, webs_t wp, int argc, char **argv)
 {
@@ -2183,6 +2213,11 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 #else
 	int found_app_scutclient = 0;
 #endif
+#if defined(APP_MENTOHUST)
+	int found_app_mentohust = 1;
+#else
+	int found_app_mentohust = 0;
+#endif
 #if defined(APP_TTYD)
 	int found_app_ttyd = 1;
 #else
@@ -2275,11 +2310,12 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 #else
 	int has_http_ssl = 0;
 #endif
-#if defined (SUPPORT_DDNS_SSL)
-	int has_ddns_ssl = 1;
+#if defined (SUPPORT_OPENSSL_EC)
+	int has_openssl_ec = 1;
 #else
-	int has_ddns_ssl = 0;
+	int has_openssl_ec = 0;
 #endif
+	int has_ddns_ssl = 1;
 #if defined (USE_RT3352_MII)
 	int has_inic_mii = 1;
 #else
@@ -2303,16 +2339,15 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 #else
 	int has_btn_mode = 0;
 #endif
-#if defined (USE_WID_5G) && (USE_WID_5G==7610 || USE_WID_5G==7612 || USE_WID_5G==7615) && BOARD_HAS_5G_11AC
+#if defined (USE_WID_5G) && (USE_WID_5G==7610 || USE_WID_5G==7612 || USE_WID_5G==7615 || USE_WID_5G==7915)
 	int has_5g_vht = 1;
 #else
 	int has_5g_vht = 0;
 #endif
-#if defined (USE_WID_5G) && USE_WID_5G==7615 && BOARD_HAS_5G_11AC
+#if defined (USE_WID_5G) && (USE_WID_5G==7615 || USE_WID_5G==7915)
 	int has_5g_mumimo = 1;
 	int has_5g_txbf = 1;
-	int has_5g_band_steering = 1;
-#if defined (BOARD_MT7615_DBDC)
+#if defined (BOARD_MT7615_DBDC) || (BOARD_MT7915_DBDC)
 	int has_5g_160mhz = 0;
 #else
 	int has_5g_160mhz = 1;
@@ -2320,15 +2355,12 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 #else
 	int has_5g_mumimo = 0;
 	int has_5g_txbf = 0;
-	int has_5g_band_steering = 0;
 	int has_5g_160mhz = 0;
 #endif
-#if defined (USE_WID_2G) && USE_WID_2G==7615
+#if defined (USE_WID_2G) && (USE_WID_2G==7615 || USE_WID_2G==7915)
 	int has_2g_turbo_qam = 1;
-	int has_2g_airtimefairness = 1;
 #else
 	int has_2g_turbo_qam = 0;
-	int has_2g_airtimefairness = 0;
 #endif
 #if defined (USE_WID_2G)
 	int wid_2g = USE_WID_2G;
@@ -2345,10 +2377,20 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 #else
 	int has_sfe = 0;
 #endif
-#if defined (BOARD_MT7615_DBDC)
+#if defined (BOARD_MT7615_DBDC) || defined (BOARD_MT7915_DBDC)
 	int has_lan_ap_isolate = 0;
 #else
 	int has_lan_ap_isolate = 1;
+#endif
+#if defined (USE_WID_5G) && (USE_WID_5G==7915)
+	int has_5g_11ax = 1;
+#else
+	int has_5g_11ax = 0;
+#endif
+#if defined (USE_WID_2G) && (USE_WID_2G==7915)
+	int has_2g_11ax = 1;
+#else
+	int has_2g_11ax = 0;
 #endif
 
 	websWrite(wp,
@@ -2372,7 +2414,8 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		"function found_app_napt66() { return %d;}\n"
 		"function found_app_dnsforwarder() { return %d;}\n"
 		"function found_app_shadowsocks() { return %d;}\n"
-		"function found_app_xupnpd() { return %d;}\n",
+		"function found_app_xupnpd() { return %d;}\n"
+		"function found_app_mentohust() { return %d;}\n",
 		found_utl_hdparm,
 		found_app_ovpn,
 		found_app_dlna,
@@ -2393,7 +2436,8 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		found_app_napt66,
 		found_app_dnsforwarder,
 		found_app_shadowsocks,
-		found_app_xupnpd
+		found_app_xupnpd,
+		found_app_mentohust
 	);
 
 	websWrite(wp,
@@ -2402,6 +2446,7 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		"function support_ipv4_ppe() { return %d;}\n"
 		"function support_peap_ssl() { return %d;}\n"
 		"function support_http_ssl() { return %d;}\n"
+		"function support_openssl_ec() { return %d;}\n"
 		"function support_ddns_ssl() { return %d;}\n"
 		"function support_min_vlan() { return %d;}\n"
 		"function support_max_conn() { return %d;}\n"
@@ -2426,18 +2471,19 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		"function support_2g_stream_tx() { return %d;}\n"
 		"function support_2g_stream_rx() { return %d;}\n"
 		"function support_2g_turbo_qam() { return %d;}\n"
-		"function support_2g_airtimefairness() { return %d;}\n"
 		"function support_5g_txbf() { return %d;}\n"
-		"function support_5g_band_steering() { return %d;}\n"
 		"function support_5g_mumimo() { return %d;}\n"
 		"function support_sfe() { return %d;}\n"
 		"function support_lan_ap_isolate() { return %d;}\n"
-		"function support_5g_160mhz() { return %d;}\n",
+		"function support_5g_160mhz() { return %d;}\n"
+		"function support_5g_11ax() { return %d;}\n"
+		"function support_2g_11ax() { return %d;}\n",
 		has_ipv6,
 		has_ipv6_ppe,
 		has_ipv4_ppe,
 		has_peap_ssl,
 		has_http_ssl,
+		has_openssl_ec,
 		has_ddns_ssl,
 		MIN_EXT_VLAN_VID,
 		max_conn,
@@ -2462,13 +2508,13 @@ ej_firmware_caps_hook(int eid, webs_t wp, int argc, char **argv)
 		BOARD_NUM_ANT_2G_TX,
 		BOARD_NUM_ANT_2G_RX,
 		has_2g_turbo_qam,
-		has_2g_airtimefairness,
 		has_5g_txbf,
-		has_5g_band_steering,
 		has_5g_mumimo,
 		has_sfe,
 		has_lan_ap_isolate,
-		has_5g_160mhz
+		has_5g_160mhz,
+		has_5g_11ax,
+		has_2g_11ax
 	);
 
 	return 0;
@@ -2566,22 +2612,26 @@ openvpn_srv_cert_hook(int eid, webs_t wp, int argc, char **argv)
 {
 	int has_found_cert = 0;
 #if defined(APP_OPENVPN)
-	int i, i_atls;
+	int i, i_atls, i_tcv2;
 	char key_file[64];
-	static const char *openvpn_server_keys[5] = {
+	static const char *openvpn_server_keys[6] = {
 		"ca.crt",
 		"dh1024.pem",
 		"server.crt",
 		"server.key",
-		"ta.key"
+		"ta.key",
+		"stc2.key"
 	};
 
 	has_found_cert = 1;
 
 	i_atls = nvram_get_int("vpns_ov_atls");
+	i_tcv2 = nvram_get_int("vpns_ov_tcv2");
 
-	for (i=0; i<5; i++) {
+	for (i=0; i<6; i++) {
 		if (!i_atls && (i == 4))
+			continue;
+		if (!i_tcv2 && (i == 5))
 			continue;
 		sprintf(key_file, "%s/%s", STORAGE_OVPNSVR_DIR, openvpn_server_keys[i]);
 		if (!f_exists(key_file)) {
@@ -3185,12 +3235,12 @@ apply_cgi(const char *url, webs_t wp)
 		int sys_result = 1;
 #if defined(APP_OPENVPN)
 		char *common_name = websGetVar(wp, "common_name", "");
-		int rsa_bits = atoi(websGetVar(wp, "rsa_bits", "1024"));
+		char *rsa_bits = websGetVar(wp, "rsa_bits", "1024");
 		int days_valid = atoi(websGetVar(wp, "days_valid", "365"));
 		if (strlen(common_name) < 1)
 			common_name = "client@ovpn";
 		if (get_login_safe())
-			sys_result = doSystem("/sbin/ovpn_export_client '%s' %d %d", common_name, rsa_bits, days_valid);
+			sys_result = doSystem("/sbin/ovpn_export_client '%s' %s %d", common_name, rsa_bits, days_valid);
 #endif
 		websWrite(wp, "{\"sys_result\": %d}", sys_result);
 		return 0;
@@ -3200,12 +3250,12 @@ apply_cgi(const char *url, webs_t wp)
 		int sys_result = 1;
 #if defined(APP_OPENVPN)
 		char *common_name = websGetVar(wp, "common_name", "");
-		int rsa_bits = atoi(websGetVar(wp, "rsa_bits", "1024"));
+		char *rsa_bits = websGetVar(wp, "rsa_bits", "1024");
 		int days_valid = atoi(websGetVar(wp, "days_valid", "365"));
 		if (strlen(common_name) < 1)
 			common_name = "OpenVPN Server";
 		if (get_login_safe())
-			sys_result = doSystem("/usr/bin/openvpn-cert.sh %s -n '%s' -b %d -d %d", "server", common_name, rsa_bits, days_valid);
+			sys_result = doSystem("/usr/bin/openvpn-cert.sh %s -n '%s' -b %s -d %d", "server", common_name, rsa_bits, days_valid);
 #endif
 		websWrite(wp, "{\"sys_result\": %d}", sys_result);
 		return 0;
@@ -3215,12 +3265,12 @@ apply_cgi(const char *url, webs_t wp)
 		int sys_result = 1;
 #if defined(SUPPORT_HTTPS)
 		char *common_name = websGetVar(wp, "common_name", "");
-		int rsa_bits = atoi(websGetVar(wp, "rsa_bits", "1024"));
+		char *rsa_bits = websGetVar(wp, "rsa_bits", "1024");
 		int days_valid = atoi(websGetVar(wp, "days_valid", "365"));
 		if (strlen(common_name) < 1)
 			common_name = nvram_safe_get("lan_ipaddr_t");
 		if (get_login_safe())
-			sys_result = doSystem("/usr/bin/https-cert.sh -n '%s' -b %d -d %d", common_name, rsa_bits, days_valid);
+			sys_result = doSystem("/usr/bin/https-cert.sh -n '%s' -b %s -d %d", common_name, rsa_bits, days_valid);
 #endif
 		websWrite(wp, "{\"sys_result\": %d}", sys_result);
 		return 0;
@@ -3712,6 +3762,36 @@ static char no_cache_IE[] =
 "Expires: -1"
 ;
 
+#if defined (APP_SCUT)
+static void
+do_scutclient_log_file(const char *url, FILE *stream)
+{
+	dump_file(stream, "/tmp/scutclient.log");
+	fputs("\r\n", stream); /* terminator */
+}
+
+static char scutclient_log_txt[] =
+"Content-Disposition: attachment;\r\n"
+"filename=scutclient.log"
+;
+
+#endif
+
+#if defined (APP_MENTOHUST)
+static void
+do_mentohust_log_file(const char *url, FILE *stream)
+{
+	dump_file(stream, "/tmp/mentohust.log");
+	fputs("\r\n", stream); /* terminator */
+}
+
+static char mentohust_log_txt[] =
+"Content-Disposition: attachment;\r\n"
+"filename=mentohust.log"
+;
+
+#endif
+
 struct mime_handler mime_handlers[] = {
 	/* cached javascript files w/o translations */
 	{ "jquery.js", "text/javascript", NULL, NULL, do_file, 0 }, // 2012.06 Eagle23
@@ -3753,6 +3833,12 @@ struct mime_handler mime_handlers[] = {
 	{ "Settings_**.CFG", "application/force-download", NULL, NULL, do_nvram_file, 1 },
 	{ "Storage_**.TBZ", "application/force-download", NULL, NULL, do_storage_file, 1 },
 	{ "syslog.txt", "application/force-download", syslog_txt, NULL, do_syslog_file, 1 },
+#if defined(APP_SCUT)
+	{ "scutclient.log", "application/force-download", scutclient_log_txt, NULL, do_scutclient_log_file, 1 },
+#endif
+#if defined(APP_MENTOHUST)
+	{ "mentohust.log", "application/force-download", mentohust_log_txt, NULL, do_mentohust_log_file, 1 },
+#endif
 #if defined(APP_OPENVPN)
 	{ "client.ovpn", "application/force-download", NULL, NULL, do_export_ovpn_client, 1 },
 #endif
@@ -4005,7 +4091,9 @@ struct ej_handler ej_handlers[] =
 	{ "get_flash_time", ej_get_flash_time},
 	{ "get_static_client", ej_get_static_client},
 	{ "get_static_ccount", ej_get_static_ccount},
+#ifndef WEBUI_HIDE_VPN
 	{ "get_vpns_client", ej_get_vpns_client},
+#endif
 	{ "wl_auth_list", ej_wl_auth_list},
 #if BOARD_HAS_5G_RADIO
 	{ "wl_scan_5g", ej_wl_scan_5g},
@@ -4045,6 +4133,10 @@ struct ej_handler ej_handlers[] =
 	{ "scutclient_action", scutclient_action_hook},
 	{ "scutclient_status", scutclient_status_hook},
 	{ "scutclient_version", scutclient_version_hook},
+#endif
+#if defined (APP_MENTOHUST)
+	{ "mentohust_action", mentohust_action_hook},
+	{ "mentohust_status", mentohust_status_hook},
 #endif
 #if defined (APP_SHADOWSOCKS)
 	{ "shadowsocks_action", shadowsocks_action_hook},
